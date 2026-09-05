@@ -1,14 +1,18 @@
+import file.CsvExporter;
 import file.CsvLoader;
 import file.GameFile;
+import model.Game;
+import sort.ExternalSort;
+
 import java.io.File;
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
-import model.Game;
-import sort.ExternalSort;
 
 /**
  * Trabalho Prático I - Algoritmos e Estruturas de Dados III (PUC Minas)
@@ -24,16 +28,57 @@ import sort.ExternalSort;
  */
 public class Main {
 
-    private static final String CSV_PATH = "data/steam.csv";
-    private static final String BIN_PATH = "data/steam.bin";
+    private static final String CSV_PATH;
+    private static final String BIN_PATH;
+    private static final String SORTED_PATH;
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private static final Scanner sc = new Scanner(System.in);
 
+    static {
+        // Os caminhos são resolvidos a partir da pasta do PROJETO (onde ficam
+        // as pastas "out" e "data"), e não do diretório de onde o comando
+        // "java" foi chamado (cwd). Isso evita o problema de o programa
+        // criar/procurar "data/..." em um lugar inesperado quando o usuário
+        // roda "java -cp out Main" de outra pasta.
+        File projectRoot = resolveProjectRoot();
+        CSV_PATH = new File(projectRoot, "data/steam.csv").getPath();
+        BIN_PATH = new File(projectRoot, "data/steam.bin").getPath();
+        SORTED_PATH = new File(projectRoot, "data/steam_ordenado.bin").getPath();
+    }
+
+    /**
+     * Descobre a pasta raiz do projeto (a pasta que contém "out" e "data")
+     * a partir da localização real do .class em execução, e não do
+     * diretório de trabalho atual (user.dir).
+     */
+    private static File resolveProjectRoot() {
+        try {
+            Path codeLocation = Path.of(
+                    Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            // codeLocation costuma ser a pasta "out" (quando rodado com -cp out)
+            // ou um .jar dentro da pasta raiz do projeto.
+            File codeDir = codeLocation.toFile();
+            if (!codeDir.isDirectory()) {
+                codeDir = codeDir.getParentFile(); // caso esteja rodando a partir de um .jar
+            }
+            File parent = codeDir.getParentFile();
+            return parent != null ? parent : new File(".");
+        } catch (URISyntaxException | NullPointerException e) {
+            // Fallback: usa o diretório de trabalho atual.
+            return new File(".");
+        }
+    }
+
     public static void main(String[] args) throws IOException {
-        new File("data").mkdirs();
- 
-        System.out.println(" TP1 - AED III - CRUD Sequencial de Jogos da Steam"); 
+        new File(BIN_PATH).getParentFile().mkdirs();
+
+        System.out.println("=========================================================");
+        System.out.println(" TP1 - AED III - CRUD Sequencial de Jogos da Steam");
+        System.out.println("=========================================================");
+        System.out.println("Pasta de dados em uso : " + new File(BIN_PATH).getParentFile().getAbsolutePath());
+        System.out.println("Arquivo CSV esperado  : " + new File(CSV_PATH).getAbsolutePath());
+        System.out.println("Arquivo binário (.bin): " + new File(BIN_PATH).getAbsolutePath());
 
         boolean sair = false;
         while (!sair) {
@@ -48,6 +93,7 @@ public class Main {
                     case "5" -> ordenacaoExterna(gameFile);
                     case "6" -> estatisticas(gameFile);
                     case "7" -> listarAmostra(gameFile);
+                    case "8" -> exportarParaCsv();
                     case "0" -> sair = true;
                     default -> System.out.println("Opção inválida.");
                 }
@@ -66,6 +112,7 @@ public class Main {
         System.out.println("5 - Ordenação Externa");
         System.out.println("6 - Estatísticas do arquivo");
         System.out.println("7 - Listar amostra de registros");
+        System.out.println("8 - Exportar um arquivo .bin para .csv");
         System.out.println("0 - Sair");
         System.out.print("Escolha uma opção: ");
     }
@@ -153,7 +200,7 @@ public class Main {
         int numeroCaminhos = lerInt("Número de caminhos (arquivos temporários, mínimo 2): ");
         int maxRegistros = lerInt("Número máximo de registros ordenados em memória primária: ");
 
-        String destPath = "data/steam_ordenado.bin";
+        String destPath = SORTED_PATH;
         System.out.println("Executando ordenação externa (intercalação balanceada)...");
         long inicio = System.currentTimeMillis();
         ExternalSort.sort(gameFile, destPath, numeroCaminhos, maxRegistros);
@@ -179,6 +226,39 @@ public class Main {
         System.out.println("Registros removidos: " + stats[1]);
         System.out.println("Último id utilizado: " + gameFile.getLastId());
         System.out.println("Tamanho do arquivo : " + gameFile.length() + " bytes");
+    }
+
+    /**
+     * Exporta um arquivo binário (.bin) qualquer - por exemplo o
+     * "steam_ordenado.bin" gerado pela Ordenação Externa - de volta para
+     * um arquivo .csv, contendo os campos da entidade Game.
+     * Abre o .bin em uma GameFile própria e independente da usada pelo menu,
+     * então funciona mesmo que o usuário não tenha trocado o arquivo
+     * principal pelo arquivo ordenado.
+     */
+    private static void exportarParaCsv() throws IOException {
+        System.out.print("Caminho do arquivo .bin a exportar [" + SORTED_PATH + "]: ");
+        String binPath = sc.nextLine().trim();
+        if (binPath.isBlank()) binPath = SORTED_PATH;
+
+        File binFile = new File(binPath);
+        if (!binFile.exists()) {
+            System.out.println("Arquivo não encontrado: " + binFile.getAbsolutePath());
+            return;
+        }
+
+        String csvPadrao = binPath.endsWith(".bin")
+                ? binPath.substring(0, binPath.length() - 4) + ".csv"
+                : binPath + ".csv";
+        System.out.print("Caminho do .csv de saída [" + csvPadrao + "]: ");
+        String csvPath = sc.nextLine().trim();
+        if (csvPath.isBlank()) csvPath = csvPadrao;
+
+        try (GameFile origem = new GameFile(binFile.getPath())) {
+            int total = CsvExporter.export(origem, csvPath);
+            System.out.println("Exportação concluída: " + total + " registros gravados em "
+                    + new File(csvPath).getAbsolutePath());
+        }
     }
 
     private static void listarAmostra(GameFile gameFile) throws IOException {

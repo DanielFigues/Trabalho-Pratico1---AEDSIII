@@ -178,10 +178,10 @@ public class ExternalSort {
                                           File[] outFiles, List<List<Integer>> outRunSizes,
                                           int numeroCaminhos) throws IOException {
         DataInputStream[] ins = new DataInputStream[numeroCaminhos];
-        ArrayDeque<Integer>[] filas = new ArrayDeque[numeroCaminhos];
+        List<ArrayDeque<Integer>> filas = new ArrayList<>(numeroCaminhos);
         for (int i = 0; i < numeroCaminhos; i++) {
             ins[i] = new DataInputStream(new java.io.BufferedInputStream(new FileInputStream(inFiles[i])));
-            filas[i] = new ArrayDeque<>(inRunSizes.get(i));
+            filas.add(new ArrayDeque<>(inRunSizes.get(i)));
         }
         DataOutputStream[] outs = new DataOutputStream[numeroCaminhos];
         for (int i = 0; i < numeroCaminhos; i++) {
@@ -194,7 +194,7 @@ public class ExternalSort {
             int[] tamanhosGrupo = new int[numeroCaminhos];
             algumaFilaTemRun = false;
             for (int i = 0; i < numeroCaminhos; i++) {
-                Integer tam = filas[i].pollFirst();
+                Integer tam = filas.get(i).pollFirst();
                 tamanhosGrupo[i] = (tam == null) ? 0 : tam;
                 if (tam != null) algumaFilaTemRun = true;
             }

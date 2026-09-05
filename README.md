@@ -7,7 +7,6 @@ jogos da plataforma Steam (`data/steam.csv`).
 ## Como compilar e rodar
 
 ```bash
-cd steamtp1
 javac -d out $(find src -name "*.java")
 java -cp out Main
 ```
