@@ -1,7 +1,9 @@
 import file.CsvExporter;
 import file.CsvLoader;
+import compress.CompressionService;
 import file.GameFile;
 import model.Game;
+import search.PatternSearchService;
 import sort.ExternalSort;
 
 import java.io.File;
@@ -15,7 +17,8 @@ import java.util.List;
 import java.util.Scanner;
 
 /**
- * Trabalho Prático I - Algoritmos e Estruturas de Dados III (PUC Minas)
+ * Algoritmos e Estruturas de Dados III (PUC Minas)
+ * TP1 (CRUD sequencial + ordenação externa) e TP3 (compactação e casamento de padrões).
  * Tema escolhido: base de dados de jogos da Steam (dataset "Steam Store Games").
  *
  * Menu principal (uso pelo terminal), conforme especificado no enunciado:
@@ -25,6 +28,11 @@ import java.util.Scanner;
  *   4) Deletar um registro
  *   5) Ordenação Externa (intercalação balanceada, com nº de caminhos e
  *      nº máximo de registros em memória primária)
+ *
+ * Opções da Etapa 3:
+ *   9) Compactar a base (Huffman e LZW), comparando ganho e tempo
+ *  10) Descompactar uma versão X da compactação (substitui o arquivo de dados)
+ *  11) Casamento de padrões (KMP e Boyer-Moore) em um campo ou no arquivo inteiro
  */
 public class Main {
 
@@ -34,6 +42,9 @@ public class Main {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private static final Scanner sc = new Scanner(System.in);
+
+    /** Serviço da Etapa 3 que executa Huffman e LZW sobre o arquivo de dados. */
+    private static final CompressionService COMPRESSAO = new CompressionService();
 
     static {
         // Os caminhos são resolvidos a partir da pasta do PROJETO (onde ficam
@@ -74,7 +85,7 @@ public class Main {
         new File(BIN_PATH).getParentFile().mkdirs();
 
         System.out.println("=========================================================");
-        System.out.println(" TP1 - AED III - CRUD Sequencial de Jogos da Steam");
+        System.out.println(" AED III - Jogos da Steam (CRUD, Compactação, Padrões)");
         System.out.println("=========================================================");
         System.out.println("Pasta de dados em uso : " + new File(BIN_PATH).getParentFile().getAbsolutePath());
         System.out.println("Arquivo CSV esperado  : " + new File(CSV_PATH).getAbsolutePath());
@@ -94,6 +105,9 @@ public class Main {
                     case "6" -> estatisticas(gameFile);
                     case "7" -> listarAmostra(gameFile);
                     case "8" -> exportarParaCsv();
+                    case "9" -> compactarBase();
+                    case "10" -> descompactarBase(gameFile);
+                    case "11" -> casamentoDePadroes();
                     case "0" -> sair = true;
                     default -> System.out.println("Opção inválida.");
                 }
@@ -113,6 +127,9 @@ public class Main {
         System.out.println("6 - Estatísticas do arquivo");
         System.out.println("7 - Listar amostra de registros");
         System.out.println("8 - Exportar um arquivo .bin para .csv");
+        System.out.println("9 - Compactar a base de dados (Huffman e LZW)");
+        System.out.println("10 - Descompactar uma versão da base de dados");
+        System.out.println("11 - Casamento de padrões (KMP e Boyer-Moore)");
         System.out.println("0 - Sair");
         System.out.print("Escolha uma opção: ");
     }
@@ -270,6 +287,113 @@ public class Main {
                 count[0]++;
             }
         });
+    }
+
+    // ---------------------------------------------------------------
+    // Etapa 3 - Compressão de dados
+    // ---------------------------------------------------------------
+
+    /**
+     * Compacta o arquivo de dados com Huffman e LZW. Cada execução cria uma nova
+     * versão X, com os arquivos "nomeArquivoNomeAlgoritmoCompressaoX", e mostra
+     * ganho/perda, tempo de cada algoritmo e qual deles foi melhor.
+     */
+    private static void compactarBase() throws IOException {
+        File dados = new File(BIN_PATH);
+        if (!dados.exists() || dados.length() == 0) {
+            System.out.println("Não há arquivo de dados para compactar. Carregue a base primeiro (opção 1).");
+            return;
+        }
+        System.out.println("Compactando " + dados.getName() + " (" + dados.length() + " bytes) com Huffman e LZW...");
+        try {
+            CompressionService.printCompressionReport(COMPRESSAO.compress(dados));
+            System.out.println("Integridade verificada: a descompressão de cada algoritmo reproduz o arquivo original.");
+        } catch (IllegalStateException e) {
+            System.out.println("Erro na compactação: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Descompacta a versão X informada pelo usuário e SUBSTITUI o arquivo de dados
+     * pelo resultado, mostrando o tempo de cada algoritmo e qual foi mais rápido.
+     */
+    private static void descompactarBase(GameFile gameFile) throws IOException {
+        File dados = new File(BIN_PATH);
+        List<Integer> versoes = COMPRESSAO.availableVersions(dados);
+        if (versoes.isEmpty()) {
+            System.out.println("Nenhuma versão compactada encontrada. Use a opção 9 para compactar.");
+            return;
+        }
+        System.out.println("Versões disponíveis: " + versoes);
+        int versao = lerInt("Informe a versão X que deseja descompactar: ");
+        if (!versoes.contains(versao)) {
+            System.out.println("A versão " + versao + " não existe.");
+            return;
+        }
+        System.out.print("Isso SUBSTITUIRÁ o arquivo de dados atual (" + dados.getName() + "). Continuar? (s/n): ");
+        if (!sc.nextLine().trim().toLowerCase().startsWith("s")) {
+            System.out.println("Operação cancelada.");
+            return;
+        }
+
+        gameFile.close(); // libera o arquivo de dados para poder ser substituído
+        try {
+            CompressionService.printDecompressionReport(COMPRESSAO.decompress(dados, versao));
+            System.out.println("Arquivo de dados substituído pela versão " + versao + " descompactada.");
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            System.out.println("Erro na descompactação: " + e.getMessage());
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Etapa 3 - Casamento de padrões
+    // ---------------------------------------------------------------
+
+    /**
+     * Busca um padrão (texto) em um campo dos registros ou no arquivo binário inteiro,
+     * usando KMP e Boyer-Moore, e compara os dois algoritmos.
+     */
+    private static void casamentoDePadroes() throws IOException {
+        File dados = new File(BIN_PATH);
+        if (!dados.exists() || dados.length() == 0) {
+            System.out.println("Não há arquivo de dados para pesquisar. Carregue a base primeiro (opção 1).");
+            return;
+        }
+
+        System.out.println("Onde buscar o padrão?");
+        System.out.println("  1 - Nome do jogo");
+        System.out.println("  2 - Desenvolvedora");
+        System.out.println("  3 - Gêneros");
+        System.out.println("  4 - Arquivo binário inteiro (bytes)");
+        PatternSearchService.Field campo;
+        switch (lerInt("Escolha: ")) {
+            case 1 -> campo = PatternSearchService.Field.NAME;
+            case 2 -> campo = PatternSearchService.Field.DEVELOPER;
+            case 3 -> campo = PatternSearchService.Field.GENRES;
+            case 4 -> campo = PatternSearchService.Field.WHOLE_FILE;
+            default -> {
+                System.out.println("Opção inválida.");
+                return;
+            }
+        }
+
+        System.out.print("Padrão a procurar: ");
+        String padrao = sc.nextLine();
+        if (padrao.isEmpty()) {
+            System.out.println("O padrão não pode ser vazio.");
+            return;
+        }
+
+        boolean ignorarCaixa = false;
+        if (campo != PatternSearchService.Field.WHOLE_FILE) {
+            System.out.print("Ignorar maiúsculas/minúsculas? (s/n): ");
+            ignorarCaixa = sc.nextLine().trim().toLowerCase().startsWith("s");
+        } else {
+            System.out.println("(No arquivo inteiro a comparação é exata, byte a byte.)");
+        }
+
+        PatternSearchService.printReport(campo, padrao,
+                PatternSearchService.search(BIN_PATH, campo, padrao, ignorarCaixa));
     }
 
     // ---------------------------------------------------------------
