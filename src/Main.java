@@ -3,6 +3,7 @@ import file.CsvLoader;
 import compress.CompressionService;
 import file.GameFile;
 import model.Game;
+import search.PatternSearchService;
 import sort.ExternalSort;
 
 import java.io.File;
@@ -31,6 +32,7 @@ import java.util.Scanner;
  * Opções da Etapa 3:
  *   9) Compactar a base (Huffman e LZW), comparando ganho e tempo
  *  10) Descompactar uma versão X da compactação (substitui o arquivo de dados)
+ *  11) Casamento de padrões (KMP e Boyer-Moore) em um campo ou no arquivo inteiro
  */
 public class Main {
 
@@ -105,6 +107,7 @@ public class Main {
                     case "8" -> exportarParaCsv();
                     case "9" -> compactarBase();
                     case "10" -> descompactarBase(gameFile);
+                    case "11" -> casamentoDePadroes();
                     case "0" -> sair = true;
                     default -> System.out.println("Opção inválida.");
                 }
@@ -126,6 +129,7 @@ public class Main {
         System.out.println("8 - Exportar um arquivo .bin para .csv");
         System.out.println("9 - Compactar a base de dados (Huffman e LZW)");
         System.out.println("10 - Descompactar uma versão da base de dados");
+        System.out.println("11 - Casamento de padrões (KMP e Boyer-Moore)");
         System.out.println("0 - Sair");
         System.out.print("Escolha uma opção: ");
     }
@@ -339,6 +343,57 @@ public class Main {
         } catch (IllegalArgumentException | IllegalStateException e) {
             System.out.println("Erro na descompactação: " + e.getMessage());
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Etapa 3 - Casamento de padrões
+    // ---------------------------------------------------------------
+
+    /**
+     * Busca um padrão (texto) em um campo dos registros ou no arquivo binário inteiro,
+     * usando KMP e Boyer-Moore, e compara os dois algoritmos.
+     */
+    private static void casamentoDePadroes() throws IOException {
+        File dados = new File(BIN_PATH);
+        if (!dados.exists() || dados.length() == 0) {
+            System.out.println("Não há arquivo de dados para pesquisar. Carregue a base primeiro (opção 1).");
+            return;
+        }
+
+        System.out.println("Onde buscar o padrão?");
+        System.out.println("  1 - Nome do jogo");
+        System.out.println("  2 - Desenvolvedora");
+        System.out.println("  3 - Gêneros");
+        System.out.println("  4 - Arquivo binário inteiro (bytes)");
+        PatternSearchService.Field campo;
+        switch (lerInt("Escolha: ")) {
+            case 1 -> campo = PatternSearchService.Field.NAME;
+            case 2 -> campo = PatternSearchService.Field.DEVELOPER;
+            case 3 -> campo = PatternSearchService.Field.GENRES;
+            case 4 -> campo = PatternSearchService.Field.WHOLE_FILE;
+            default -> {
+                System.out.println("Opção inválida.");
+                return;
+            }
+        }
+
+        System.out.print("Padrão a procurar: ");
+        String padrao = sc.nextLine();
+        if (padrao.isEmpty()) {
+            System.out.println("O padrão não pode ser vazio.");
+            return;
+        }
+
+        boolean ignorarCaixa = false;
+        if (campo != PatternSearchService.Field.WHOLE_FILE) {
+            System.out.print("Ignorar maiúsculas/minúsculas? (s/n): ");
+            ignorarCaixa = sc.nextLine().trim().toLowerCase().startsWith("s");
+        } else {
+            System.out.println("(No arquivo inteiro a comparação é exata, byte a byte.)");
+        }
+
+        PatternSearchService.printReport(campo, padrao,
+                PatternSearchService.search(BIN_PATH, campo, padrao, ignorarCaixa));
     }
 
     // ---------------------------------------------------------------
